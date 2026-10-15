@@ -1,0 +1,511 @@
+<title>PQC TLS Readiness</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap">
+<style>
+/* Layout: a single report column — summary figures, then trend charts, then what changed, then the per-host register. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #fdfdfe;
+  --ink: #0e1520;
+  --ink-2: #4a5463;
+  --muted: #7d8795;
+  --grid: #e3e7ec;
+  --axis: #c4cbd4;
+  --border: rgba(14, 21, 32, 0.11);
+  --wash: rgba(42, 120, 214, 0.07);
+
+  --pqc: #2a78d6;
+  --x25519: #eb6834;
+  --p256: #1baf7a;
+  --other: #a3abb6;
+
+  --good: #0ca30c;
+  --good-ink: #006300;
+  --critical: #d03b3b;
+  --critical-ink: #b42b2b;
+  --neutral-chip: #e7ebf0;
+
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1016; --surface: #141a22; --ink: #eef1f5; --ink-2: #b9c1cc; --muted: #8a94a2;
+    --grid: #232b36; --axis: #364150; --border: rgba(255, 255, 255, 0.10); --wash: rgba(57, 135, 229, 0.12);
+    --pqc: #3987e5; --x25519: #d95926; --p256: #199e70; --other: #5d6672;
+    --good: #0ca30c; --good-ink: #2fbf2f; --critical: #d03b3b; --critical-ink: #ef7272; --neutral-chip: #232b36;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1016; --surface: #141a22; --ink: #eef1f5; --ink-2: #b9c1cc; --muted: #8a94a2;
+  --grid: #232b36; --axis: #364150; --border: rgba(255, 255, 255, 0.10); --wash: rgba(57, 135, 229, 0.12);
+  --pqc: #3987e5; --x25519: #d95926; --p256: #199e70; --other: #5d6672;
+  --good: #0ca30c; --good-ink: #2fbf2f; --critical: #d03b3b; --critical-ink: #ef7272; --neutral-chip: #232b36;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+table { font-size: inherit; color: inherit; border-collapse: collapse; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 48px; }
+
+h1, h2 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: -0.005em; }
+h1 { font-size: clamp(2rem, 5vw, 2.9rem); font-weight: 600; line-height: 1.08; }
+h2 { font-size: 1.45rem; font-weight: 600; line-height: 1.2; }
+p { margin: 0; }
+.eyebrow { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+.lede { color: var(--ink-2); max-width: 65ch; font-size: 1.02rem; }
+.mono { font-family: var(--font-mono); font-size: 0.86em; }
+.num { font-variant-numeric: tabular-nums; }
+.section { display: grid; gap: 18px; min-width: 0; }
+.section-head { display: grid; gap: 6px; }
+.section-head p { color: var(--ink-2); max-width: 70ch; }
+
+/* header */
+header { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 22px; color: var(--muted); font-size: 0.86rem; }
+.meta b { color: var(--ink-2); font-weight: 500; }
+
+/* KPI strip */
+.kpis { display: grid; grid-template-columns: 1.5fr repeat(3, 1fr); border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.kpi { padding: 20px 22px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.kpi + .kpi { border-left: 1px solid var(--border); }
+.kpi .label { font-size: 0.8rem; color: var(--muted); }
+.kpi .value { font-family: var(--font-display); font-size: 2.1rem; font-weight: 600; line-height: 1.1; }
+.kpi.hero .value { font-size: 3.4rem; color: var(--pqc); }
+.kpi .sub { font-size: 0.84rem; color: var(--ink-2); }
+.delta-up { color: var(--good-ink); font-weight: 500; }
+.delta-down { color: var(--critical-ink); font-weight: 500; }
+@media (max-width: 760px) {
+  .kpis { grid-template-columns: 1fr 1fr; }
+  .kpi.hero { grid-column: 1 / -1; }
+  .kpi + .kpi { border-left: 0; }
+  .kpi:not(.hero) { border-top: 1px solid var(--border); }
+  .kpi:nth-child(3), .kpi:nth-child(5) { border-left: 1px solid var(--border); }
+}
+
+/* charts */
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 18px 12px; min-width: 0; }
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font-family: var(--font-body); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.84rem; color: var(--ink-2); margin-bottom: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.legend i.line { height: 3px; border-radius: 2px; }
+.legend i.dash { height: 0; border-top: 2px dashed var(--muted); border-radius: 0; background: none !important; }
+.tip {
+  position: absolute; pointer-events: none; z-index: 2; min-width: 180px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14); padding: 9px 11px; font-size: 0.82rem;
+}
+.tip .t-date { font-weight: 600; margin-bottom: 4px; }
+.tip .t-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.tip .t-row span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.tip .t-row i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.tip .t-row b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.note { font-size: 0.82rem; color: var(--muted); }
+
+/* changes */
+.changes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 760px) { .changes { grid-template-columns: 1fr; } }
+.change-col { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.change-col h3 { margin: 0; font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.change-col ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.change-col li { font-family: var(--font-mono); font-size: 0.84rem; padding: 5px 0; border-bottom: 1px solid var(--grid); overflow-wrap: anywhere; }
+.empty { color: var(--muted); font-size: 0.88rem; }
+.count { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 400; }
+
+/* chips */
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px 1px 6px; border-radius: 999px; font-size: 0.76rem; font-weight: 500; white-space: nowrap; background: var(--neutral-chip); color: var(--ink-2); }
+.chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chip.pqc { background: var(--wash); color: var(--pqc); }
+.chip.err { color: var(--critical-ink); }
+.chip.classical { color: var(--ink-2); }
+.badge-up::before { content: "▲"; color: var(--good); font-size: 0.7rem; }
+.badge-down::before { content: "▼"; color: var(--critical); font-size: 0.7rem; }
+
+/* tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+table.data { width: 100%; font-size: 0.86rem; }
+table.data th, table.data td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--grid); white-space: nowrap; vertical-align: middle; }
+table.data th { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--surface); position: sticky; top: 0; }
+table.data th.sortable { cursor: pointer; user-select: none; }
+table.data th.sortable:hover, table.data th.sortable:focus-visible { color: var(--ink); }
+table.data th[aria-sort="ascending"]::after { content: " ↑"; }
+table.data th[aria-sort="descending"]::after { content: " ↓"; }
+table.data td.r, table.data th.r { text-align: right; }
+table.data tbody tr:last-child td { border-bottom: 0; }
+table.data tbody tr:hover td { background: var(--wash); }
+.host-scroll { max-height: 560px; overflow: auto; }
+.mix { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 760px) { .mix { grid-template-columns: 1fr; } }
+
+/* controls */
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.controls input[type="search"] {
+  font: inherit; font-size: 0.9rem; padding: 7px 11px; border-radius: 7px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--ink); min-width: 0; flex: 1 1 220px; max-width: 340px;
+}
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; background: var(--surface); }
+.seg button { font: inherit; font-size: 0.84rem; padding: 6px 12px; border: 0; background: none; color: var(--ink-2); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--wash); color: var(--pqc); font-weight: 500; }
+:focus-visible { outline: 2px solid var(--pqc); outline-offset: 2px; }
+.shown { font-size: 0.84rem; color: var(--muted); margin-left: auto; }
+
+details summary { cursor: pointer; color: var(--ink-2); font-size: 0.9rem; }
+details[open] summary { margin-bottom: 12px; }
+footer { color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--border); padding-top: 18px; display: grid; gap: 6px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Post-quantum TLS scan</div>
+    <h1 id="headline">Hybrid post-quantum key exchange</h1>
+    <p class="lede" id="lede"></p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="kpis" id="kpis" aria-label="Summary"></section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Hybrid PQC adoption</h2>
+      <p>Share of reachable hosts that negotiated <span class="mono">X25519MLKEM768</span> (X25519 combined with ML-KEM-768, FIPS 203) when contacted with a default OpenSSL client.</p>
+    </div>
+    <div class="panel">
+      <div class="legend" id="pqc-legend"></div>
+      <div class="chart" id="pqc-chart"></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Key-exchange mix</h2>
+      <p>Every reachable host, by the group it negotiated. Hybrid PQC gains come almost entirely from hosts that previously used plain X25519.</p>
+    </div>
+    <div class="panel">
+      <div class="legend" id="mix-legend"></div>
+      <div class="chart" id="mix-chart"></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2 id="changes-title">What changed since the last scan</h2>
+      <p id="changes-sub"></p>
+    </div>
+    <div class="changes" id="changes"></div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Protocol and cipher</h2>
+      <p>The rest of the handshake has barely moved. AES-128 is still adequate against Grover's algorithm; the quantum risk sits in key exchange, which is what the charts above track.</p>
+    </div>
+    <div class="mix" id="mix-tables"></div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Host register</h2>
+      <p id="hosts-sub"></p>
+    </div>
+    <div class="controls">
+      <label for="host-search" class="eyebrow" hidden>Search hosts</label>
+      <input type="search" id="host-search" placeholder="Search host, group or cipher" autocomplete="off">
+      <div class="seg" role="group" aria-label="Filter by status" id="status-filter">
+        <button type="button" data-f="all" aria-pressed="true">All</button>
+        <button type="button" data-f="Hybrid PQC" aria-pressed="false">Hybrid PQC</button>
+        <button type="button" data-f="Classical" aria-pressed="false">Classical</button>
+        <button type="button" data-f="Unreachable" aria-pressed="false">Unreachable</button>
+      </div>
+      <span class="shown" id="shown"></span>
+    </div>
+    <div class="table-wrap host-scroll">
+      <table class="data" id="host-table">
+        <thead><tr>
+          <th class="sortable" tabindex="0" data-k="host">Host</th>
+          <th class="sortable" tabindex="0" data-k="status">Status</th>
+          <th class="sortable" tabindex="0" data-k="group">Key exchange</th>
+          <th class="sortable" tabindex="0" data-k="version">TLS</th>
+          <th class="sortable" tabindex="0" data-k="cipher">Cipher suite</th>
+          <th class="sortable" tabindex="0" data-k="sig">Signature</th>
+          <th class="sortable" tabindex="0" data-k="since">PQC since</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section">
+    <details>
+      <summary>Snapshot data table</summary>
+      <div class="table-wrap"><table class="data" id="snap-table"></table></div>
+    </details>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<script>
+const DATA = {"generated":"2026-10-16","n_targets":242,"snapshots":[{"date":"2025-10-01","targets":242,"reachable":238,"unreachable":4,"pqc":56,"pqc_pct":23.53,"g_pqc":23.53,"g_x25519":54.62,"g_p256":17.65,"g_other":4.2,"tls13_pct":76.89,"tls12_pct":21.85,"aes128_pct":39.5,"aes256_pct":55.46,"aes_other_pct":5.04},{"date":"2025-11-04","targets":242,"reachable":235,"unreachable":7,"pqc":70,"pqc_pct":29.79,"g_pqc":29.79,"g_x25519":49.79,"g_p256":16.17,"g_other":4.26,"tls13_pct":77.87,"tls12_pct":21.28,"aes128_pct":39.57,"aes256_pct":55.74,"aes_other_pct":4.68},{"date":"2025-11-10","targets":242,"reachable":237,"unreachable":5,"pqc":70,"pqc_pct":29.54,"g_pqc":29.54,"g_x25519":49.79,"g_p256":16.46,"g_other":4.22,"tls13_pct":77.64,"tls12_pct":21.52,"aes128_pct":40.08,"aes256_pct":55.27,"aes_other_pct":4.64},{"date":"2025-11-25","targets":242,"reachable":236,"unreachable":6,"pqc":74,"pqc_pct":31.36,"g_pqc":31.36,"g_x25519":49.15,"g_p256":16.95,"g_other":2.54,"tls13_pct":79.24,"tls12_pct":20.76,"aes128_pct":41.1,"aes256_pct":55.08,"aes_other_pct":3.81},{"date":"2025-12-03","targets":242,"reachable":236,"unreachable":6,"pqc":74,"pqc_pct":31.36,"g_pqc":31.36,"g_x25519":49.15,"g_p256":16.95,"g_other":2.54,"tls13_pct":79.24,"tls12_pct":20.76,"aes128_pct":41.1,"aes256_pct":55.08,"aes_other_pct":3.81},{"date":"2026-01-13","targets":242,"reachable":236,"unreachable":6,"pqc":82,"pqc_pct":34.75,"g_pqc":34.75,"g_x25519":44.92,"g_p256":16.1,"g_other":4.24,"tls13_pct":77.97,"tls12_pct":20.34,"aes128_pct":40.25,"aes256_pct":54.24,"aes_other_pct":5.51},{"date":"2026-01-27","targets":242,"reachable":236,"unreachable":6,"pqc":86,"pqc_pct":36.44,"g_pqc":36.44,"g_x25519":44.49,"g_p256":16.53,"g_other":2.54,"tls13_pct":79.66,"tls12_pct":20.34,"aes128_pct":40.68,"aes256_pct":55.51,"aes_other_pct":3.81},{"date":"2026-02-10","targets":242,"reachable":235,"unreachable":7,"pqc":86,"pqc_pct":36.6,"g_pqc":36.6,"g_x25519":44.68,"g_p256":16.17,"g_other":2.55,"tls13_pct":80.0,"tls12_pct":20.0,"aes128_pct":40.85,"aes256_pct":55.32,"aes_other_pct":3.83},{"date":"2026-03-02","targets":242,"reachable":236,"unreachable":6,"pqc":83,"pqc_pct":35.17,"g_pqc":35.17,"g_x25519":44.92,"g_p256":16.1,"g_other":3.81,"tls13_pct":78.81,"tls12_pct":19.92,"aes128_pct":40.68,"aes256_pct":54.24,"aes_other_pct":5.08},{"date":"2026-08-03","targets":242,"reachable":236,"unreachable":6,"pqc":91,"pqc_pct":38.56,"g_pqc":38.56,"g_x25519":43.64,"g_p256":14.41,"g_other":3.39,"tls13_pct":80.51,"tls12_pct":17.8,"aes128_pct":41.53,"aes256_pct":53.39,"aes_other_pct":5.08},{"date":"2026-08-28","targets":242,"reachable":233,"unreachable":9,"pqc":127,"pqc_pct":54.51,"g_pqc":54.51,"g_x25519":29.61,"g_p256":13.73,"g_other":2.15,"tls13_pct":82.4,"tls12_pct":17.6,"aes128_pct":41.63,"aes256_pct":54.94,"aes_other_pct":3.43},{"date":"2026-09-15","targets":242,"reachable":235,"unreachable":7,"pqc":127,"pqc_pct":54.04,"g_pqc":54.04,"g_x25519":29.79,"g_p256":13.19,"g_other":2.98,"tls13_pct":81.28,"tls12_pct":17.45,"aes128_pct":40.85,"aes256_pct":54.47,"aes_other_pct":4.68},{"date":"2026-09-30","targets":242,"reachable":236,"unreachable":6,"pqc":130,"pqc_pct":55.08,"g_pqc":55.08,"g_x25519":29.24,"g_p256":12.71,"g_other":2.97,"tls13_pct":81.36,"tls12_pct":17.37,"aes128_pct":41.53,"aes256_pct":53.81,"aes_other_pct":4.66},{"date":"2026-10-14","targets":242,"reachable":234,"unreachable":8,"pqc":133,"pqc_pct":56.84,"g_pqc":56.84,"g_x25519":28.21,"g_p256":12.82,"g_other":2.14,"tls13_pct":82.91,"tls12_pct":17.09,"aes128_pct":41.45,"aes256_pct":55.13,"aes_other_pct":3.42}],"changes":{"gained":["verizon.com","www.cisco.com","yale.edu"],"lost":[]},"hosts":[{"host":"abbott.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"abbvie.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"account.meraki.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2025-11-04"},{"host":"adobe.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-09-30"},{"host":"agoda.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"airbnb.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha512","since":""},{"host":"alibaba.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"aliexpress.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.2","cipher":"ECDHE-ECDSA-AES128-GCM-SHA256","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"aljazeera.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"amazon.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"amd.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"americanexpress.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"amgen.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"anthropic.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"anz.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-01-13"},{"host":"apple.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-11-25"},{"host":"astrazeneca.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"au.dk","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":"2026-01-13"},{"host":"aws.amazon.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-11-04"},{"host":"aws.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-11-04"},{"host":"azure.microsoft.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"baidu.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"bankofamerica.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-11-25"},{"host":"bankofcanada.ca","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES256-GCM-SHA384","sig":"rsa_pkcs1_sha512","since":""},{"host":"barclays.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-03"},{"host":"bayer.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"bbc.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"bell.ca","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_CHACHA20_POLY1305_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"berkeley.edu","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"bestbuy.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"binance.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-08-03"},{"host":"bing.com","status":"Classical","group":"ECDH, secp521r1, 521 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"biogen.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"bitfinex.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"bitstamp.net","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-01-13"},{"host":"blockchain.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"blog.cloudflare.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"bloomberg.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"bmo.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"bms.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-01-13"},{"host":"bny.com","status":"Classical","group":"DH, 3072 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha512","since":""},{"host":"booking.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-11-04"},{"host":"bt.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-01-13"},{"host":"caltech.edu","status":"Unreachable","group":"","version":"","cipher":"","sig":"","since":""},{"host":"cam.ac.uk","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"capitalone.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-03"},{"host":"carrefour.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"cathaypacific.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"channelnewsasia.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"chase.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"citibank.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES256-GCM-SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"cloud.google.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"cloudflare-quic.com","status":"Classical","group":"","version":"TLSv1.2","cipher":"AES256-GCM-SHA384","sig":"","since":""},{"host":"cnbc.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"cnn.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp384r1_sha384","since":"2025-10-01"},{"host":"coinbase.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"columbia.edu","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"comcast.com","status":"Unreachable","group":"","version":"","cipher":"","sig":"","since":""},{"host":"console.cloud.google.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"cornell.edu","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"costco.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"credit-suisse.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"crypto.cloudflare.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"crypto.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"data.gov.sg","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"db.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"deepmind.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-03"},{"host":"delta.com","status":"Unreachable","group":"","version":"","cipher":"","sig":"","since":""},{"host":"demo-pqc.tls13.cloudflare.com","status":"Unreachable","group":"","version":"","cipher":"","sig":"","since":""},{"host":"developers.cloudflare.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"discover.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"dropbox.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"duckduckgo.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2025-11-04"},{"host":"ebay.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"epfl.ch","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"ethz.ch","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"etsy.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-CHACHA20-POLY1305","sig":"rsa_pss_rsae_sha256","since":""},{"host":"expedia.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"facebook.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_CHACHA20_POLY1305_SHA256","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"firebase.google.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"forbes.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-CHACHA20-POLY1305","sig":"rsa_pss_rsae_sha256","since":""},{"host":"foxnews.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"gatech.edu","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"github.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"gojek.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"goldmansachs.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"google.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"grab.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-11-04"},{"host":"gsk.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"harvard.edu","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"hilton.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"homedepot.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"hotels.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"hsbc.com","status":"Unreachable","group":"","version":"","cipher":"","sig":"","since":""},{"host":"huggingface.co","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"hulu.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"icloud.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-11-25"},{"host":"ihg.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"imperial.ac.uk","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"instagram.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_CHACHA20_POLY1305_SHA256","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"intel.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"jd.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"johnsonandjohnson.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha512","since":""},{"host":"jpmorganchase.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"ki.se","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"kraken.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"ku.dk","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES256-GCM-SHA384","sig":"rsa_pkcs1_sha512","since":""},{"host":"lazada.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.2","cipher":"ECDHE-ECDSA-AES128-GCM-SHA256","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"linkedin.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"lowes.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"m1.com.sg","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"mail.cloudflare.com","status":"Unreachable","group":"","version":"","cipher":"","sig":"","since":""},{"host":"mail.google.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"marriott.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"mcgill.ca","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"medium.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"meraki.cisco.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"mercadolibre.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"merck.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"meta.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_CHACHA20_POLY1305_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"microsoft.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-09-30"},{"host":"mit.edu","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES256-GCM-SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"moderna.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"my.commbank.com.au","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES256-GCM-SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"nab.com.au","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"natwest.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-09-15"},{"host":"nbcnews.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES256-GCM-SHA384","sig":"rsa_pkcs1_sha512","since":""},{"host":"netflix.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"novartis.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-03"},{"host":"ntu.edu.sg","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"nus.edu.sg","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-01-13"},{"host":"nvidia.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"nytimes.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"ocbc.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"okx.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"openai.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"optus.com.au","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"oracle.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"orange.fr","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"outlook.com","status":"Classical","group":"ECDH, secp384r1, 384 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"outshift.cisco.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-11-04"},{"host":"ox.ac.uk","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"paypal.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"pfizer.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"polytechnique.edu","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"pq.cloudflareresearch.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"pq.golang.org","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"princeton.edu","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"psu.edu","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"purdue.edu","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_CHACHA20_POLY1305_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"quantumai.google","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"quora.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha512","since":""},{"host":"rabobank.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-03"},{"host":"rakuten.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"reddit.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"reuters.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"roche.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"rogers.com","status":"Unreachable","group":"","version":"","cipher":"","sig":"","since":""},{"host":"salesforce.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"sanofi.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"santander.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-01-27"},{"host":"scmp.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"shopee.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"shopify.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"singaporeair.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"singtel.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-01-13"},{"host":"skyscanner.net","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"slack.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"sprint.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"stackoverflow.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"stanford.edu","status":"Classical","group":"","version":"TLSv1.2","cipher":"AES128-GCM-SHA256","sig":"","since":""},{"host":"starhub.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-01-13"},{"host":"storage.googleapis.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"straitstimes.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":"2025-11-04"},{"host":"stripe.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"su.se","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"support.cisco.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"support.cloudflare.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"t-mobile.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"tamu.edu","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"target.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"td.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"telefonica.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"telekom.de","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp384r1_sha384","since":""},{"host":"telstra.com.au","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"tesla.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"test-pqc.tls13.cloudflareresearch.com","status":"Unreachable","group":"","version":"","cipher":"","sig":"","since":""},{"host":"theguardian.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"time.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"tm.com.my","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-01-27"},{"host":"tokopedia.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES256-GCM-SHA384","sig":"rsa_pkcs1_sha256","since":""},{"host":"transferwise.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"trip.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"trivago.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"tudelft.nl","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"twitter.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"uber.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-09-30"},{"host":"ubs.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"uchicago.edu","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"ucla.edu","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"uio.no","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_CHACHA20_POLY1305_SHA256","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"umich.edu","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"umontreal.ca","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"unil.ch","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"united.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"univ-amu.fr","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"uob.com.sg","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES128-GCM-SHA256","sig":"rsa_pkcs1_sha256","since":""},{"host":"upenn.edu","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"utoronto.ca","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"uw.edu","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"verizon.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-10-14"},{"host":"vodafone.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES256-GCM-SHA384","sig":"rsa_pss_rsae_sha256","since":""},{"host":"walmart.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"wayfair.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"webex.com","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.2","cipher":"ECDHE-RSA-AES256-GCM-SHA384","sig":"rsa_pkcs1_sha256","since":""},{"host":"wellsfargo.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"wise.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"wsj.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-11-04"},{"host":"www.australia.gov.au","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-01-13"},{"host":"www.canada.ca","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"www.cdc.gov","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-03"},{"host":"www.cisco.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"www.data.gov","status":"Classical","group":"ECDH, prime256v1, 256 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"www.europa.eu","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":""},{"host":"www.fbi.gov","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"www.google.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"www.gov.sg","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-11-04"},{"host":"www.gov.uk","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"www.interpol.int","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-03"},{"host":"www.irs.gov","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2026-08-28"},{"host":"www.maybank2u.com.sg","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-28"},{"host":"www.moh.gov.sg","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-11-04"},{"host":"www.nasa.gov","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"www.nih.gov","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2026-08-03"},{"host":"www.singpass.gov.sg","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":"2025-11-04"},{"host":"www.tech.gov.sg","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2025-11-04"},{"host":"www.whitehouse.gov","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"x.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"},{"host":"yahoo.com","status":"Classical","group":"X25519, 253 bits","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"ecdsa_secp256r1_sha256","since":""},{"host":"yale.edu","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_128_GCM_SHA256","sig":"rsa_pss_rsae_sha256","since":"2026-10-14"},{"host":"youtube.com","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"ecdsa_secp256r1_sha256","since":"2025-10-01"},{"host":"zoom.us","status":"Hybrid PQC","group":"X25519MLKEM768","version":"TLSv1.3","cipher":"TLS_AES_256_GCM_SHA384","sig":"rsa_pss_rsae_sha256","since":"2025-10-01"}]};
+
+(function () {
+  if (!DATA) return;
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const parse = d => new Date(d + "T00:00:00Z");
+  const fmtDate = d => { const t = parse(d); return `${t.getUTCDate()} ${MONTHS[t.getUTCMonth()]} ${t.getUTCFullYear()}`; };
+  const pct = (v, dp = 1) => `${v.toFixed(dp)}%`;
+  const pts = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(1)} pts`;
+
+  const S = DATA.snapshots;
+  const first = S[0], last = S[S.length - 1], prev = S[S.length - 2] || S[0];
+
+  // ---------- header ----------
+  $("#headline").textContent = `${pct(last.pqc_pct, 0)} of hosts now negotiate hybrid post-quantum key exchange`;
+  $("#lede").textContent =
+    `Across ${DATA.n_targets} scanned hosts, hybrid ML-KEM adoption rose from ${pct(first.pqc_pct)} on ${fmtDate(first.date)} to ` +
+    `${pct(last.pqc_pct)} on ${fmtDate(last.date)}. Classical-only key exchange stays exposed to "harvest now, decrypt later" collection.`;
+  $("#meta").innerHTML = [
+    ["Latest scan", fmtDate(last.date)],
+    ["Snapshots", S.length],
+    ["Period", `${fmtDate(first.date)} – ${fmtDate(last.date)}`],
+    ["Generated", fmtDate(DATA.generated)],
+  ].map(([k, v]) => `<span>${k} <b>${esc(v)}</b></span>`).join("");
+
+  // ---------- KPIs ----------
+  const dCls = v => v > 0 ? "delta-up" : v < 0 ? "delta-down" : "";
+  const kpi = (label, value, sub, hero) =>
+    `<div class="kpi${hero ? " hero" : ""}"><div class="label">${label}</div><div class="value num">${value}</div><div class="sub">${sub}</div></div>`;
+  const dFirst = last.pqc_pct - first.pqc_pct, dPrev = last.pqc_pct - prev.pqc_pct;
+  $("#kpis").innerHTML =
+    kpi("Hybrid PQC share", pct(last.pqc_pct), `${last.pqc} of ${last.reachable} reachable hosts`, true) +
+    kpi("Since first scan", `<span class="${dCls(dFirst)}">${pts(dFirst)}</span>`, `${last.pqc - first.pqc >= 0 ? "+" : ""}${last.pqc - first.pqc} hosts since ${MONTHS[parse(first.date).getUTCMonth()]} ${parse(first.date).getUTCFullYear()}`) +
+    kpi("Since last scan", `<span class="${dCls(dPrev)}">${pts(dPrev)}</span>`, `vs ${fmtDate(prev.date)}`) +
+    kpi("TLS 1.3", pct(last.tls13_pct, 0), `${last.unreachable} host${last.unreachable === 1 ? "" : "s"} unreachable`);
+
+  // ---------- chart helpers ----------
+  const NS = "http://www.w3.org/2000/svg";
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  function timeTicks(t0, t1, width) {
+    const maxTicks = Math.max(2, Math.floor(width / 90));
+    const a = new Date(t0), b = new Date(t1);
+    const months = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + b.getUTCMonth() - a.getUTCMonth();
+    const step = [1, 2, 3, 4, 6, 12].find(s => months / s <= maxTicks) || 12;
+    const out = [];
+    let y = a.getUTCFullYear(), m = a.getUTCMonth() + 1;
+    if (m > 11) { m = 0; y++; }
+    while (m % step !== 0) { m++; if (m > 11) { m = 0; y++; } }
+    for (;;) {
+      const t = Date.UTC(y, m, 1);
+      if (t > t1) break;
+      out.push({ t, label: m === 0 || out.length === 0 ? `${MONTHS[m]} ${y}` : MONTHS[m] });
+      m += step; while (m > 11) { m -= 12; y++; }
+    }
+    return out;
+  }
+
+  function makeChart(el, { height, series, stacked, refLine, yMax, tipRows }) {
+    const tip = document.createElement("div");
+    tip.className = "tip"; tip.hidden = true; el.appendChild(tip);
+    const xs = S.map(s => parse(s.date).getTime());
+    const t0 = xs[0], t1 = xs[xs.length - 1];
+    let svg;
+
+    function draw() {
+      if (svg) svg.remove();
+      const W = Math.max(300, el.clientWidth), H = height;
+      const m = { t: 12, r: stacked ? 108 : 56, b: 28, l: 40 };
+      if (W < 520) m.r = stacked ? 12 : 44;
+      const iw = W - m.l - m.r, ih = H - m.t - m.b;
+      const x = t => m.l + (t - t0) / (t1 - t0 || 1) * iw;
+      const y = v => m.t + ih - v / yMax * ih;
+      svg = document.createElementNS(NS, "svg");
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      svg.setAttribute("role", "img");
+      let h = "";
+      // grid + y labels
+      for (let v = 0; v <= yMax; v += 25) {
+        h += `<line x1="${m.l}" x2="${m.l + iw}" y1="${y(v)}" y2="${y(v)}" stroke="var(--${v === 0 ? "axis" : "grid"})" stroke-width="1"/>`;
+        h += `<text x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)" class="num">${v}%</text>`;
+      }
+      // x labels
+      timeTicks(t0, t1, iw).forEach(tk => {
+        h += `<line x1="${x(tk.t)}" x2="${x(tk.t)}" y1="${m.t + ih}" y2="${m.t + ih + 4}" stroke="var(--axis)"/>`;
+        h += `<text x="${x(tk.t)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${tk.label}</text>`;
+      });
+      // gaps (no scans for > 60 days)
+      const gaps = [];
+      for (let i = 1; i < xs.length; i++) if ((xs[i] - xs[i - 1]) / 864e5 > 60) gaps.push([xs[i - 1], xs[i]]);
+      gaps.forEach(([a, b]) => {
+        h += `<rect x="${x(a)}" y="${m.t}" width="${x(b) - x(a)}" height="${ih}" fill="var(--grid)" opacity="0.45"/>`;
+        if (x(b) - x(a) > 70) h += `<text x="${(x(a) + x(b)) / 2}" y="${m.t + 14}" text-anchor="middle" font-size="10.5" fill="var(--muted)">no scans</text>`;
+      });
+
+      if (stacked) {
+        let base = S.map(() => 0);
+        series.forEach((sr, si) => {
+          const top = S.map((s, i) => base[i] + s[sr.key]);
+          const d = S.map((s, i) => `${i ? "L" : "M"}${x(xs[i])},${y(top[i])}`).join("") +
+                    S.map((s, i) => `L${x(xs[S.length - 1 - i])},${y(base[S.length - 1 - i])}`).join("") + "Z";
+          h += `<path d="${d}" fill="var(${sr.color})" stroke="var(--surface)" stroke-width="2" stroke-linejoin="round"/>`;
+          if (W >= 520) {
+            const mid = (base[S.length - 1] + top[S.length - 1]) / 2, band = top[S.length - 1] - base[S.length - 1];
+            if (band >= 6) h += `<text x="${m.l + iw + 8}" y="${y(mid) + 4}" font-size="11.5" fill="var(--ink-2)"><tspan font-weight="600" fill="var(--ink)" class="num">${Math.round(S[S.length - 1][sr.key])}%</tspan> ${sr.short}</text>`;
+          }
+          base = top;
+        });
+      } else {
+        const sr = series[0];
+        if (refLine != null) {
+          h += `<line x1="${m.l}" x2="${m.l + iw}" y1="${y(refLine)}" y2="${y(refLine)}" stroke="var(--muted)" stroke-dasharray="4 4" stroke-width="1.2"/>`;
+        }
+        const pts = S.map((s, i) => [x(xs[i]), y(s[sr.key])]);
+        const area = `M${pts[0][0]},${y(0)}` + pts.map(p => `L${p[0]},${p[1]}`).join("") + `L${pts[pts.length - 1][0]},${y(0)}Z`;
+        h += `<defs><linearGradient id="pqc-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(${sr.color})" stop-opacity="0.22"/><stop offset="1" stop-color="var(${sr.color})" stop-opacity="0.02"/></linearGradient></defs>`;
+        h += `<path d="${area}" fill="url(#pqc-grad)"/>`;
+        h += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${p[0]},${p[1]}`).join("")}" fill="none" stroke="var(${sr.color})" stroke-width="2.25" stroke-linejoin="round" stroke-linecap="round"/>`;
+        pts.forEach((p, i) => {
+          const end = i === pts.length - 1;
+          h += `<circle cx="${p[0]}" cy="${p[1]}" r="${end ? 5.5 : 3.5}" fill="var(${end ? sr.color : "--surface"})" stroke="var(${end ? "--surface" : sr.color})" stroke-width="2"/>`;
+        });
+        const e = pts[pts.length - 1];
+        h += `<text x="${e[0] + 10}" y="${e[1] + 4}" font-size="13" font-weight="600" fill="var(--ink)" class="num">${pct(S[S.length - 1][sr.key])}</text>`;
+        const s0 = pts[0];
+        h += `<text x="${s0[0] + 2}" y="${s0[1] - 10}" font-size="11.5" fill="var(--ink-2)" class="num">${pct(S[0][sr.key])}</text>`;
+      }
+      h += `<line id="xh" y1="${m.t}" y2="${m.t + ih}" stroke="var(--ink-2)" stroke-width="1" opacity="0" />`;
+      h += `<rect id="hit" x="${m.l - 10}" y="${m.t}" width="${iw + 20}" height="${ih}" fill="transparent"/>`;
+      svg.innerHTML = h;
+      el.insertBefore(svg, tip);
+
+      const xh = svg.querySelector("#xh");
+      const hit = svg.querySelector("#hit");
+      const move = ev => {
+        const r = svg.getBoundingClientRect();
+        const px = (ev.clientX - r.left) * (W / r.width);
+        let bi = 0, bd = Infinity;
+        xs.forEach((t, i) => { const d = Math.abs(x(t) - px); if (d < bd) { bd = d; bi = i; } });
+        const cx = x(xs[bi]);
+        xh.setAttribute("x1", cx); xh.setAttribute("x2", cx); xh.setAttribute("opacity", "0.35");
+        tip.innerHTML = `<div class="t-date">${fmtDate(S[bi].date)}</div>` + tipRows(S[bi]);
+        tip.hidden = false;
+        const scale = r.width / W;
+        let left = cx * scale + 14;
+        if (left + tip.offsetWidth > r.width) left = cx * scale - tip.offsetWidth - 14;
+        tip.style.left = `${Math.max(0, left)}px`;
+        tip.style.top = `${m.t * scale + 4}px`;
+      };
+      hit.addEventListener("pointermove", move);
+      hit.addEventListener("pointerdown", move);
+      hit.addEventListener("pointerleave", () => { tip.hidden = true; xh.setAttribute("opacity", "0"); });
+    }
+    draw();
+    let rw = el.clientWidth;
+    new ResizeObserver(() => { if (el.clientWidth !== rw) { rw = el.clientWidth; draw(); } }).observe(el);
+  }
+
+  const row = (color, label, value) => `<div class="t-row"><span><i style="background:var(${color})"></i>${label}</span><b>${value}</b></div>`;
+
+  // ---------- PQC chart ----------
+  $("#pqc-legend").innerHTML =
+    `<span><i class="line" style="background:var(--pqc)"></i>Hybrid PQC share of reachable hosts</span>` +
+    `<span><i class="dash"></i>50% of hosts</span>`;
+  makeChart($("#pqc-chart"), {
+    height: 300, yMax: 100, refLine: 50,
+    series: [{ key: "pqc_pct", color: "--pqc" }],
+    tipRows: s => row("--pqc", "Hybrid PQC", `${pct(s.pqc_pct)}`) +
+      `<div class="t-row"><span>Hosts</span><b>${s.pqc} / ${s.reachable}</b></div>`,
+  });
+
+  // ---------- Mix chart ----------
+  const MIX = [
+    { key: "g_pqc", color: "--pqc", label: "X25519 + ML-KEM-768 (hybrid PQC)", short: "Hybrid PQC" },
+    { key: "g_x25519", color: "--x25519", label: "X25519", short: "X25519" },
+    { key: "g_p256", color: "--p256", label: "P-256 (secp256r1)", short: "P-256" },
+    { key: "g_other", color: "--other", label: "Other (P-384, P-521, FFDHE, unreported)", short: "Other" },
+  ];
+  $("#mix-legend").innerHTML = MIX.map(s => `<span><i style="background:var(${s.color})"></i>${s.label}</span>`).join("");
+  makeChart($("#mix-chart"), {
+    height: 300, yMax: 100, stacked: true, series: MIX,
+    tipRows: s => MIX.slice().reverse().map(sr => row(sr.color, sr.short, pct(s[sr.key]))).join(""),
+  });
+
+  // ---------- changes ----------
+  const C = DATA.changes;
+  $("#changes-title").textContent = `What changed since ${fmtDate(prev.date)}`;
+  $("#changes-sub").textContent = `Hosts whose key exchange moved between the ${fmtDate(prev.date)} and ${fmtDate(last.date)} scans.`;
+  const list = (title, cls, items, empty) => `<div class="panel change-col"><h3><span class="${cls}"></span>${title} <span class="count">${items.length}</span></h3>` +
+    (items.length ? `<ul>${items.map(i => `<li>${esc(i)}</li>`).join("")}</ul>` : `<p class="empty">${empty}</p>`) + `</div>`;
+  $("#changes").innerHTML =
+    list("Started using hybrid PQC", "badge-up", C.gained, "No hosts switched to hybrid PQC.") +
+    list("Stopped using hybrid PQC", "badge-down", C.lost, "No hosts dropped hybrid PQC.");
+
+  // ---------- protocol / cipher tables ----------
+  const mixTable = (title, rows) => `<div class="table-wrap"><table class="data"><thead><tr><th>${title}</th><th class="r">${fmtDate(first.date)}</th><th class="r">${fmtDate(last.date)}</th><th class="r">Change</th></tr></thead><tbody>` +
+    rows.map(([label, a, b]) => `<tr><td>${label}</td><td class="r num">${pct(a)}</td><td class="r num">${pct(b)}</td><td class="r num">${pts(b - a)}</td></tr>`).join("") + `</tbody></table></div>`;
+  $("#mix-tables").innerHTML =
+    mixTable("Protocol", [["TLS 1.3", first.tls13_pct, last.tls13_pct], ["TLS 1.2", first.tls12_pct, last.tls12_pct]]) +
+    mixTable("Bulk cipher", [["AES-256", first.aes256_pct, last.aes256_pct], ["AES-128", first.aes128_pct, last.aes128_pct], ["ChaCha20 / other", first.aes_other_pct, last.aes_other_pct]]);
+
+  // ---------- host register ----------
+  const H = DATA.hosts;
+  const counts = H.reduce((a, h) => (a[h.status] = (a[h.status] || 0) + 1, a), {});
+  $("#hosts-sub").textContent = `Every target in the ${fmtDate(last.date)} scan: ${counts["Hybrid PQC"] || 0} hybrid PQC, ${counts["Classical"] || 0} classical, ${counts["Unreachable"] || 0} unreachable. "PQC since" is the first scan in which the host negotiated hybrid PQC.`;
+  let filter = "all", query = "", sortK = "status", sortDir = 1;
+  const order = { "Hybrid PQC": 0, "Classical": 1, "Unreachable": 2 };
+  const chip = s => `<span class="chip ${s === "Hybrid PQC" ? "pqc" : s === "Unreachable" ? "err" : "classical"}">${s}</span>`;
+  function renderHosts() {
+    const q = query.toLowerCase();
+    const rows = H.filter(h => (filter === "all" || h.status === filter) &&
+      (!q || [h.host, h.group, h.cipher, h.sig, h.version].some(v => (v || "").toLowerCase().includes(q))))
+      .sort((a, b) => {
+        let va = a[sortK] || "", vb = b[sortK] || "";
+        if (sortK === "status") { va = order[a.status]; vb = order[b.status]; }
+        if (va < vb) return -sortDir; if (va > vb) return sortDir;
+        return a.host < b.host ? -1 : 1;
+      });
+    $("#host-table tbody").innerHTML = rows.map(h => `<tr>
+      <td class="mono">${esc(h.host)}</td><td>${chip(h.status)}</td>
+      <td class="mono">${esc(h.group || "—")}</td><td>${esc(h.version || "—")}</td>
+      <td class="mono">${esc(h.cipher || "—")}</td><td class="mono">${esc(h.sig || "—")}</td>
+      <td class="num">${h.since ? fmtDate(h.since) : "—"}</td></tr>`).join("") ||
+      `<tr><td colspan="7" class="empty">No hosts match “${esc(query)}”.</td></tr>`;
+    $("#shown").textContent = `${rows.length} of ${H.length} hosts`;
+    document.querySelectorAll("#host-table th").forEach(th =>
+      th.dataset.k === sortK ? th.setAttribute("aria-sort", sortDir > 0 ? "ascending" : "descending") : th.removeAttribute("aria-sort"));
+  }
+  $("#host-search").addEventListener("input", e => { query = e.target.value.trim(); renderHosts(); });
+  $("#status-filter").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    filter = b.dataset.f;
+    document.querySelectorAll("#status-filter button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    renderHosts();
+  });
+  document.querySelectorAll("#host-table th.sortable").forEach(th => {
+    const go = () => { if (sortK === th.dataset.k) sortDir = -sortDir; else { sortK = th.dataset.k; sortDir = 1; } renderHosts(); };
+    th.addEventListener("click", go);
+    th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  });
+  renderHosts();
+
+  // ---------- snapshot table ----------
+  $("#snap-table").innerHTML = `<thead><tr><th>Snapshot</th><th class="r">Reachable</th><th class="r">Hybrid PQC</th><th class="r">PQC share</th><th class="r">X25519</th><th class="r">P-256</th><th class="r">Other</th><th class="r">TLS 1.3</th></tr></thead><tbody>` +
+    S.slice().reverse().map(s => `<tr><td>${fmtDate(s.date)}</td><td class="r num">${s.reachable}</td><td class="r num">${s.pqc}</td><td class="r num">${pct(s.pqc_pct)}</td><td class="r num">${pct(s.g_x25519)}</td><td class="r num">${pct(s.g_p256)}</td><td class="r num">${pct(s.g_other)}</td><td class="r num">${pct(s.tls13_pct)}</td></tr>`).join("") + `</tbody>`;
+
+  $("#footer").innerHTML =
+    `<p>Method: each target is contacted with <span class="mono">openssl s_client -brief</span> on port 443 and the negotiated group, protocol, cipher suite and signature are recorded. Percentages use reachable hosts as the denominator; hosts that time out or fail the handshake are counted as unreachable. A host listed twice in the target file is counted once.</p>` +
+    `<p>Generated by analyse_pqc.py from ${S.length} snapshot files.</p>`;
+})();
+</script>
